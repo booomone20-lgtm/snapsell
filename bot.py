@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Flask приложение
 app = Flask(__name__)
 
-# Хранилище данных пользователей
+# Хранилище данных пользователей (временное, в реальном проекте используйте БД)
 user_sessions = {}
 user_templates = {}
 user_posts = {}
@@ -310,6 +310,9 @@ def webhook():
             update = Update.de_json(data, application.bot)
             loop.run_until_complete(application.process_update(update))
             return jsonify({"ok": True}), 200
+        except Exception as e:
+            logger.error(f"Ошибка при обработке обновления: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 500
         finally:
             loop.close()
             
@@ -321,8 +324,8 @@ def webhook():
 def set_webhook():
     """Настройка вебхука"""
     try:
-        webhook_url = "https://snapsell-esys.onrender.com/"
         import requests
+        webhook_url = "https://snapsell-esys.onrender.com/"
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
         response = requests.get(url)
         return f"Webhook set! Ответ: {response.json()}", 200
