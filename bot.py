@@ -69,6 +69,49 @@ def get_back_menu():
         ]
     }
 
+# ========== ФУНКЦИЯ ДЛЯ ЗАМЕНЫ ПОСТА ==========
+def schedule_post_replacement(chat_id, user_id, message_id, delay_minutes, template):
+    """Планирует замену поста через указанное время"""
+    
+    def replace_post():
+        try:
+            logger.info(f"⏳ Начинаю отсчёт {delay_minutes} минут для поста {message_id}")
+            time.sleep(delay_minutes * 60)
+            
+            logger.info(f"🔄 Пытаюсь заменить пост {message_id}")
+            result = send_telegram("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": template,
+                "parse_mode": "HTML"
+            })
+            
+            if result.get("ok"):
+                logger.info(f"✅ Пост {message_id} успешно заменён на шаблон")
+                send_message(user_id, 
+                    f"🔄 <b>Пост был автоматически заменён!</b>\n\n"
+                    f"⏰ Прошло {delay_minutes} минут(ы)",
+                    reply_markup=get_main_menu()
+                )
+            else:
+                error = result.get('description', 'Неизвестная ошибка')
+                logger.error(f"❌ Ошибка замены поста {message_id}: {error}")
+                
+                if "message to edit not found" in error:
+                    send_message(user_id, 
+                        f"⚠️ <b>Не удалось отредактировать пост!</b>\n"
+                        f"Пост мог быть удалён или ID изменился.\n"
+                        f"Я отправил шаблон новым сообщением в канал.",
+                        reply_markup=get_main_menu()
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка при замене поста: {e}")
+    
+    thread = threading.Thread(target=replace_post, daemon=True)
+    thread.start()
+    logger.info(f"⏳ Запланирована замена поста {message_id} через {delay_minutes} минут")
+
 # ========== ОБРАБОТЧИКИ ==========
 def handle_start(chat_id, user_id):
     """Обработчик команды /start"""
@@ -149,6 +192,7 @@ def handle_text_message(chat_id, user_id, text):
                 raise ValueError("Время должно быть больше 0")
             
             post_text = user_sessions[user_id].get("post_text", "")
+            template = user_templates.get(user_id, "⚠️ ВНИМАНИЕ! Этот пост был автоматически заменён по истечении времени.")
             
             # Отправка в канал
             result = send_telegram("sendMessage", {
@@ -159,31 +203,27 @@ def handle_text_message(chat_id, user_id, text):
             
             if result.get("ok"):
                 msg_id = result["result"]["message_id"]
+                
                 send_message(chat_id, 
-                    f"✅ <b>Пост опубликован!</b>\n⏰ Автозамена через {minutes} минут(ы)",
-                    reply_markup=get_main_menu()
+                    f"✅ <b>Пост опубликован!</b>\n"
+                    f"🆔 ID сообщения: <code>{msg_id}</code>\n"
+                    f"⏰ Автозамена через {minutes} минут(ы)\n\n"
+                    f"📋 <b>Шаблон для замены:</b>\n"
+                    f"<i>{template[:100]}</i>",
+                    reply_markup=get_main_menu(),
+                    parse_mode="HTML"
                 )
                 
-                # Запуск задачи замены в отдельном потоке
-                template = user_templates.get(user_id, "⚠️ ВНИМАНИЕ! Этот пост был автоматически заменён по истечении времени.")
-                
-                def replace_post():
-                    time.sleep(minutes * 60)
-                    try:
-                        edit_message(CHANNEL_ID, msg_id, template)
-                        logger.info(f"Пост {msg_id} заменён на шаблон")
-                    except Exception as e:
-                        logger.error(f"Ошибка замены поста: {e}")
-                
-                thread = threading.Thread(target=replace_post)
-                thread.daemon = True
-                thread.start()
-                
+                schedule_post_replacement(CHANNEL_ID, user_id, msg_id, minutes, template)
                 user_sessions[user_id]["step"] = "menu"
             else:
+                error_msg = result.get('description', 'Неизвестная ошибка')
                 send_message(chat_id, 
-                    f"❌ Ошибка публикации: {result.get('description', 'Неизвестная ошибка')}",
-                    reply_markup=get_main_menu()
+                    f"❌ <b>Ошибка публикации!</b>\n\n"
+                    f"<b>Причина:</b> {error_msg}\n\n"
+                    f"⚠️ Убедитесь, что бот является администратором канала!",
+                    reply_markup=get_main_menu(),
+                    parse_mode="HTML"
                 )
                 
         except ValueError:
@@ -192,7 +232,13 @@ def handle_text_message(chat_id, user_id, text):
     
     if step == "waiting_new_template":
         user_templates[user_id] = text
-        send_message(chat_id, f"✅ <b>Шаблон обновлён!</b>", reply_markup=get_main_menu())
+        send_message(chat_id, 
+            f"✅ <b>Шаблон обновлён!</b>\n\n"
+            f"📋 <b>Новый шаблон:</b>\n"
+            f"<i>{text}</i>",
+            reply_markup=get_main_menu(),
+            parse_mode="HTML"
+        )
         user_sessions[user_id]["step"] = "menu"
         return
     
@@ -210,7 +256,6 @@ def webhook():
         if not data:
             return "OK", 200
         
-        # Обработка сообщений
         if "message" in data:
             msg = data["message"]
             chat_id = msg["chat"]["id"]
@@ -222,7 +267,6 @@ def webhook():
             elif not text.startswith("/"):
                 handle_text_message(chat_id, user_id, text)
         
-        # Обработка нажатий на кнопки
         elif "callback_query" in data:
             callback = data["callback_query"]
             callback_data = callback.get("data", "")
