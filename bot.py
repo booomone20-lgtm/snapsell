@@ -295,16 +295,24 @@ def index():
     return "Бот работает на Render!", 200
 
 @app.route("/", methods=["POST"])
-async def webhook():
+def webhook():
     """Обработка входящих обновлений через вебхук"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "error": "No data"}), 400
         
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
-        return jsonify({"ok": True}), 200
+        # Создаем цикл событий для обработки
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            update = Update.de_json(data, application.bot)
+            loop.run_until_complete(application.process_update(update))
+            return jsonify({"ok": True}), 200
+        finally:
+            loop.close()
+            
     except Exception as e:
         logger.error(f"Ошибка в webhook: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -313,8 +321,7 @@ async def webhook():
 def set_webhook():
     """Настройка вебхука"""
     try:
-        webhook_url = "https://telegram-bot-58ie.onrender.com/"
-        # Здесь нужна синхронная установка вебхука
+        webhook_url = "https://snapsell-esys.onrender.com/"
         import requests
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
         response = requests.get(url)
@@ -324,18 +331,5 @@ def set_webhook():
 
 # ========== ЗАПУСК ==========
 if __name__ == "__main__":
-    import threading
-    
-    # Фоновый поток для polling (для работы с Telegram)
-    def run_polling():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        application.run_polling()
-    
-    # Запускаем бота в фоновом потоке
-    polling_thread = threading.Thread(target=run_polling, daemon=True)
-    polling_thread.start()
-    
-    # Запускаем Flask
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
