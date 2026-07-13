@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import os
+import traceback
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = "8623114650:AAEjuFIbvXlkOWcDDabl4W7RhV7q-yuvoHM"
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Flask приложение
 app = Flask(__name__)
 
-# Хранилище данных пользователей (временное, в реальном проекте используйте БД)
+# Хранилище данных пользователей
 user_sessions = {}
 user_templates = {}
 user_posts = {}
@@ -311,13 +312,13 @@ def webhook():
             loop.run_until_complete(application.process_update(update))
             return jsonify({"ok": True}), 200
         except Exception as e:
-            logger.error(f"Ошибка при обработке обновления: {e}")
+            logger.error(f"Ошибка при обработке обновления: {e}\n{traceback.format_exc()}")
             return jsonify({"ok": False, "error": str(e)}), 500
         finally:
             loop.close()
             
     except Exception as e:
-        logger.error(f"Ошибка в webhook: {e}")
+        logger.error(f"Ошибка в webhook: {e}\n{traceback.format_exc()}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/set_webhook", methods=["GET"])
